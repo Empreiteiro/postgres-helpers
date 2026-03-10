@@ -1,17 +1,67 @@
-"""Gerenciamento de containers Docker para PostgreSQL."""
+"""Gerenciamento de containers Docker/Podman para PostgreSQL."""
 
+import os
+import sys
 import time
 import docker
 import docker.errors
 
 
-def _client():
+def _candidate_sockets() -> list[str]:
+    """Retorna caminhos de socket candidatos para Podman, por plataforma."""
+    if sys.platform == "win32":
+        return [
+            "npipe:////./pipe/podman-machine-default",
+            "npipe:////./pipe/podman-machine-default-root",
+        ]
+    if sys.platform == "darwin":
+        home = os.path.expanduser("~")
+        xdg = os.environ.get("XDG_RUNTIME_DIR", "")
+        return [
+            f"unix://{home}/.local/share/containers/podman/machine/podman-machine-default/podman.sock",
+            f"unix://{home}/.local/share/containers/podman/machine/qemu/podman.sock",
+            *([ f"unix://{xdg}/podman/podman.sock"] if xdg else []),
+        ]
+    # Linux
+    uid = os.getuid()
+    xdg = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{uid}")
+    return [
+        f"unix://{xdg}/podman/podman.sock",
+        f"unix:///run/user/{uid}/podman/podman.sock",
+        "unix:///run/podman/podman.sock",
+    ]
+
+
+def _client() -> docker.DockerClient:
+    """
+    Conecta ao runtime de containers disponível.
+    Tenta, em ordem:
+      1. docker.from_env()  — Docker padrão ou DOCKER_HOST customizado
+      2. Caminhos de socket conhecidos do Podman
+    """
+    # 1. Variáveis de ambiente / Docker padrão
     try:
-        return docker.from_env()
-    except Exception as e:
-        raise RuntimeError(
-            "Não foi possível conectar ao Docker. Verifique se o Docker Desktop está em execução."
-        ) from e
+        client = docker.from_env()
+        client.ping()
+        return client
+    except Exception:
+        pass
+
+    # 2. Sockets do Podman
+    for url in _candidate_sockets():
+        try:
+            client = docker.DockerClient(base_url=url)
+            client.ping()
+            return client
+        except Exception:
+            continue
+
+    raise RuntimeError(
+        "Não foi possível conectar ao Docker nem ao Podman.\n"
+        "  • Docker: verifique se o Docker Desktop está em execução.\n"
+        "  • Podman: execute 'podman machine start' ou defina DOCKER_HOST "
+        "apontando para o socket do Podman."
+    )
 
 
 def create_postgres(name: str, port: int, password: str = "postgres") -> bool:
