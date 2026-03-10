@@ -175,6 +175,39 @@ def table_view(instance_name, table_name):
     )
 
 
+@app.route("/db/<instance_name>/sql", methods=["GET"])
+def sql_editor(instance_name):
+    instances = load_instances()
+    inst = _get_instance(instance_name)
+    sql = request.args.get("q", "").strip()
+    return render_template(
+        "sql.html",
+        instances=instances,
+        instance=inst,
+        instance_name=instance_name,
+        current=instance_name,
+        sql=sql,
+        result=None,
+    )
+
+
+@app.route("/db/<instance_name>/sql", methods=["POST"])
+def sql_editor_run(instance_name):
+    instances = load_instances()
+    inst = _get_instance(instance_name)
+    sql = request.form.get("sql", "").strip()
+    result = _db(inst).run_query(sql) if sql else None
+    return render_template(
+        "sql.html",
+        instances=instances,
+        instance=inst,
+        instance_name=instance_name,
+        current=instance_name,
+        sql=sql,
+        result=result,
+    )
+
+
 @app.route("/db/<instance_name>/drop-table/<table_name>", methods=["POST"])
 def drop_table(instance_name, table_name):
     inst = _get_instance(instance_name)

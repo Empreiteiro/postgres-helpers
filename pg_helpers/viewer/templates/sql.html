@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}SQL Editor — {{ instance_name }}{% endblock %}
+
+{% block head %}
+<style>
+  #sql-textarea {
+    font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
+    font-size: .875rem;
+    resize: vertical;
+    min-height: 160px;
+    background: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: .75rem 1rem;
+    caret-color: #6366f1;
+  }
+  #sql-textarea:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,.2);
+  }
+  #sql-textarea::placeholder { color: #475569; }
+</style>
+{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/">Início</a></li>
+    <li class="breadcrumb-item"><a href="/db/{{ instance_name }}">{{ instance_name }}</a></li>
+    <li class="breadcrumb-item active">SQL Editor</li>
+  </ol>
+</nav>
+
+<div class="topbar d-flex align-items-center gap-3 mb-4">
+  <div>
+    <h2 class="mb-0">
+      <i class="bi bi-terminal me-2 text-primary"></i>SQL Editor
+    </h2>
+    <small class="text-muted">
+      {{ instance.host }}:{{ instance.port }} &nbsp;·&nbsp;
+      db: <code>{{ instance.dbname }}</code>
+    </small>
+  </div>
+</div>
+
+<!-- Editor -->
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="POST" action="/db/{{ instance_name }}/sql" id="sqlForm">
+      <textarea
+        id="sql-textarea"
+        name="sql"
+        class="w-100 mb-3"
+        rows="8"
+        placeholder="SELECT * FROM customers LIMIT 10;"
+        spellcheck="false"
+        autocorrect="off"
+        autocapitalize="off"
+      >{{ sql }}</textarea>
+      <div class="d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-play-fill me-1"></i>Run
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="clearBtn">
+          <i class="bi bi-x-lg me-1"></i>Clear
+        </button>
+        <small class="text-muted ms-2">
+          <kbd>Ctrl+Enter</kbd> para executar &nbsp;·&nbsp; máximo 500 linhas
+        </small>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Result -->
+{% if result is not none %}
+
+  {% if not result.ok %}
+  <div class="alert alert-danger d-flex align-items-start gap-2" style="border-radius:12px;">
+    <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0 mt-1"></i>
+    <div>
+      <strong>Query error{% if result.pgcode %} <code style="color:inherit;">({{ result.pgcode }})</code>{% endif %}</strong><br>
+      <code style="white-space:pre-wrap; font-size:.82rem; color:inherit;">{{ result.error }}</code>
+    </div>
+  </div>
+
+  {% elif result.is_select %}
+  <div class="card">
+    <div class="card-header d-flex align-items-center py-2" style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
+      <span class="text-muted" style="font-size:.82rem;">
+        <i class="bi bi-table me-1"></i>
+        {{ result.rowcount }} linha{{ 's' if result.rowcount != 1 else '' }} retornada{{ 's' if result.rowcount != 1 else '' }}
+        {% if result.truncated %}
+        <span class="badge bg-warning text-dark ms-2">Truncado — exibindo apenas as primeiras 500 linhas</span>
+        {% endif %}
+      </span>
+    </div>
+    {% if result.rows %}
+    <div class="table-responsive" style="max-height:60vh;">
+      <table class="table table-sm table-striped table-hover mb-0">
+        <thead style="position:sticky; top:0; z-index:10;">
+          <tr>
+            {% for col in result.columns %}
+            <th class="py-2">{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in result.rows %}
+          <tr>
+            {% for col in result.columns %}
+            <td title="{{ row[col] | string }}">
+              {% set val = row[col] | string %}
+              {% if val == 'None' %}
+              <span class="text-muted fst-italic">null</span>
+              {% elif val | length > 80 %}
+              {{ val[:80] }}<span class="text-muted">…</span>
+              {% else %}
+              {{ val }}
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">Query retornou 0 linhas.</div>
+    {% endif %}
+  </div>
+
+  {% else %}
+  <div class="alert alert-success d-flex align-items-center gap-2" style="border-radius:12px;">
+    <i class="bi bi-check-circle-fill fs-5"></i>
+    <div>
+      <strong>Query executada com sucesso.</strong><br>
+      {% if result.rowcount >= 0 %}
+      <small>{{ result.rowcount }} linha{{ 's' if result.rowcount != 1 else '' }} afetada{{ 's' if result.rowcount != 1 else '' }}.</small>
+      {% else %}
+      <small>Statement concluído (DDL não retorna contagem de linhas).</small>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    document.getElementById('sql-textarea').value = '';
+    document.getElementById('sql-textarea').focus();
+  });
+
+  document.getElementById('sql-textarea').addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('sqlForm').submit();
+    }
+  });
+</script>
+{% endblock %}

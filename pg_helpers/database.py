@@ -89,6 +89,95 @@ class DatabaseManager:
             with conn.cursor() as cur:
                 cur.execute(stmt)
 
+    def run_query(self, sql: str, max_rows: int = 500) -> dict:
+        """Executa SQL arbitrário e retorna resultado estruturado.
+
+        Retorna dict com:
+          ok, is_select, columns, rows, rowcount, truncated  — em caso de sucesso
+          ok=False, error, pgcode                            — em caso de erro
+        """
+        try:
+            with self._conn() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(sql)
+                    if cur.description is not None:
+                        # SELECT / RETURNING / EXPLAIN / SHOW
+                        raw = cur.fetchmany(max_rows + 1)
+                        truncated = len(raw) > max_rows
+                        rows = [dict(r) for r in raw[:max_rows]]
+                        columns = [d[0] for d in cur.description]
+                        return {
+                            "ok": True,
+                            "is_select": True,
+                            "columns": columns,
+                            "rows": rows,
+                            "rowcount": len(rows),
+                            "truncated": truncated,
+                        }
+                    else:
+                        # INSERT / UPDATE / DELETE / DDL (rowcount == -1 para DDL)
+                        return {
+                            "ok": True,
+                            "is_select": False,
+                            "columns": [],
+                            "rows": [],
+                            "rowcount": cur.rowcount,
+                            "truncated": False,
+                        }
+        except psycopg2.Error as e:
+            return {
+                "ok": False,
+                "error": e.pgerror.strip() if e.pgerror else str(e),
+                "pgcode": e.pgcode,
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e), "pgcode": None}
+
+    def get_foreign_keys(self) -> list[dict]:
+        """Retorna todas as relações FK do schema public."""
+        return self.query("""
+            SELECT
+                kcu1.table_name  AS from_table,
+                kcu1.column_name AS from_column,
+                kcu2.table_name  AS to_table,
+                kcu2.column_name AS to_column,
+                rc.constraint_name
+            FROM information_schema.referential_constraints rc
+            JOIN information_schema.key_column_usage kcu1
+                ON kcu1.constraint_catalog = rc.constraint_catalog
+                AND kcu1.constraint_schema  = rc.constraint_schema
+                AND kcu1.constraint_name    = rc.constraint_name
+            JOIN information_schema.key_column_usage kcu2
+                ON kcu2.constraint_catalog = rc.unique_constraint_catalog
+                AND kcu2.constraint_schema  = rc.unique_constraint_schema
+                AND kcu2.constraint_name    = rc.unique_constraint_name
+            WHERE kcu1.table_schema = 'public'
+            ORDER BY kcu1.table_name, kcu1.column_name
+        """)
+
+    def get_columns_with_types(self, table: str) -> list[dict]:
+        """Retorna colunas com tipo de dado e flag de PK para uma tabela."""
+        return self.query("""
+            SELECT
+                c.column_name,
+                c.data_type,
+                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_pk
+            FROM information_schema.columns c
+            LEFT JOIN (
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema   = kcu.table_schema
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+                  AND tc.table_name      = %s
+                  AND tc.table_schema    = 'public'
+            ) pk ON c.column_name = pk.column_name
+            WHERE c.table_name   = %s
+              AND c.table_schema = 'public'
+            ORDER BY c.ordinal_position
+        """, (table, table))
+
     def paginate(self, table: str, page: int = 1, per_page: int = 50) -> tuple[list[dict], int]:
         offset = (page - 1) * per_page
         total = self.count(table)
