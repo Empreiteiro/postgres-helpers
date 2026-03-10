@@ -208,6 +208,44 @@ def sql_editor_run(instance_name):
     )
 
 
+_TYPE_MAP = {
+    "character varying": "varchar",
+    "timestamp without time zone": "timestamp",
+    "timestamp with time zone": "timestamptz",
+    "double precision": "float",
+}
+
+
+@app.route("/db/<instance_name>/er-diagram")
+def er_diagram(instance_name):
+    instances = load_instances()
+    inst = _get_instance(instance_name)
+    schema, foreign_keys = {}, []
+    try:
+        db = _db(inst)
+        tables = db.list_tables()
+        fk_list = db.get_foreign_keys()
+        fk_cols = {(fk["from_table"], fk["from_column"]) for fk in fk_list}
+        for t in tables:
+            cols = db.get_columns_with_types(t)
+            for col in cols:
+                col["data_type"] = _TYPE_MAP.get(col["data_type"], col["data_type"]).replace(" ", "_")
+                col["is_fk"] = (t, col["column_name"]) in fk_cols
+            schema[t] = cols
+        foreign_keys = fk_list
+    except Exception as e:
+        flash(str(e), "danger")
+    return render_template(
+        "er_diagram.html",
+        instances=instances,
+        instance=inst,
+        instance_name=instance_name,
+        schema=schema,
+        foreign_keys=foreign_keys,
+        current=instance_name,
+    )
+
+
 @app.route("/db/<instance_name>/drop-table/<table_name>", methods=["POST"])
 def drop_table(instance_name, table_name):
     inst = _get_instance(instance_name)

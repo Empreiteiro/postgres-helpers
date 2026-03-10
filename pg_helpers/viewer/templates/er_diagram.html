@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ instance_name }} — ER Diagram{% endblock %}
+
+{% block head %}
+<style>
+  .er-container {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 2rem;
+    overflow: auto;
+    min-height: 400px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .er-container svg {
+    max-width: 100%;
+    height: auto;
+  }
+  .er-stats .badge {
+    font-size: .8rem;
+    font-weight: 500;
+    padding: .4em .75em;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/">Início</a></li>
+    <li class="breadcrumb-item"><a href="/db/{{ instance_name }}">{{ instance_name }}</a></li>
+    <li class="breadcrumb-item active">ER Diagram</li>
+  </ol>
+</nav>
+
+<div class="topbar d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h2 class="mb-0">
+      <i class="bi bi-diagram-3 me-2 text-info"></i>ER Diagram — {{ instance_name }}
+    </h2>
+    <small class="text-muted">
+      {{ instance.host }}:{{ instance.port }} &nbsp;·&nbsp;
+      db: <code>{{ instance.dbname }}</code>
+      {% if instance.scenario %}
+      &nbsp;·&nbsp; <span class="badge bg-primary">{{ instance.scenario }}</span>
+      {% endif %}
+    </small>
+  </div>
+  <div class="d-flex gap-2 er-stats">
+    <span class="badge bg-secondary">
+      <i class="bi bi-table me-1"></i>{{ schema|length }} tabelas
+    </span>
+    <span class="badge bg-info text-dark">
+      <i class="bi bi-arrow-left-right me-1"></i>{{ foreign_keys|length }} relações
+    </span>
+    <a href="/db/{{ instance_name }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-grid me-1"></i>Ver tabelas
+    </a>
+  </div>
+</div>
+
+{% if not schema %}
+<div class="alert alert-warning d-flex align-items-center gap-2" style="border-radius:12px;">
+  <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+  <div>Nenhuma tabela encontrada neste banco de dados.</div>
+</div>
+{% else %}
+<div class="er-container">
+  <pre class="mermaid">
+erDiagram
+{% for table, cols in schema.items() %}
+    {{ table|upper }} {
+{% for col in cols %}
+        {{ col.data_type }} {{ col.column_name }}{% if col.is_pk %} PK{% elif col.is_fk %} FK{% endif %}
+{% endfor %}
+    }
+{% endfor %}
+{% for fk in foreign_keys %}
+    {{ fk.from_table|upper }} }o--|| {{ fk.to_table|upper }} : "{{ fk.from_column }}"
+{% endfor %}
+  </pre>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    er: {
+      diagramPadding: 40,
+      layoutDirection: 'TB',
+      minEntityWidth: 100,
+      minEntityHeight: 75,
+      entityPadding: 15,
+    },
+  });
+</script>
+{% endblock %}
