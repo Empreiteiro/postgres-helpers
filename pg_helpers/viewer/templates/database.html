@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ instance_name }} — Tabelas{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/">Início</a></li>
+    <li class="breadcrumb-item active">{{ instance_name }}</li>
+  </ol>
+</nav>
+
+<div class="topbar d-flex align-items-center gap-3 mb-4">
+  <div>
+    <h2 class="mb-0">
+      <i class="bi bi-server me-2 text-primary"></i>{{ instance_name }}
+    </h2>
+    <small class="text-muted">
+      {{ instance.host }}:{{ instance.port }} &nbsp;·&nbsp;
+      user: <code>{{ instance.user }}</code> &nbsp;·&nbsp;
+      db: <code>{{ instance.dbname }}</code>
+      {% if instance.scenario %}
+      &nbsp;·&nbsp; <span class="badge bg-primary">{{ instance.scenario }}</span>
+      {% endif %}
+    </small>
+  </div>
+</div>
+
+{% if error %}
+<div class="alert alert-danger d-flex align-items-center gap-2" style="border-radius:12px;">
+  <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+  <div>
+    <strong>Erro de conexão</strong><br>
+    <small>{{ error }}</small><br>
+    <small class="text-muted">Verifique se o container está em execução: <code>python main.py list</code></small>
+  </div>
+</div>
+{% elif not tables %}
+<div class="alert alert-warning">Nenhuma tabela encontrada neste banco.</div>
+{% else %}
+<div class="row g-3">
+  {% for t in tables %}
+  <div class="col-sm-6 col-md-4 col-xl-3">
+    <div class="card h-100 text-center">
+      <div class="card-body py-4 position-relative">
+        <a href="/db/{{ instance_name }}/{{ t.name }}" class="text-decoration-none stretched-link">
+          <i class="bi bi-table fs-2 text-primary mb-2 d-block"></i>
+          <h6 class="card-title mb-1 text-dark">{{ t.name }}</h6>
+          <span class="badge bg-success">
+            {% if t.count == "?" %}? linhas{% else %}{{ "{:,}".format(t.count) }} linhas{% endif %}
+          </span>
+        </a>
+        <button
+          class="btn btn-sm btn-outline-danger drop-table-btn position-absolute"
+          style="top:8px; right:8px; z-index:10; padding:2px 6px; font-size:.75rem;"
+          data-table="{{ t.name }}"
+          title="Deletar tabela"
+        >
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Drop table confirmation modal -->
+<div class="modal fade" id="dropTableModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-danger"><i class="bi bi-trash me-2"></i>Deletar tabela</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        Deletar <strong id="dropTableName"></strong>?
+        <div class="text-muted mt-1" style="font-size:.85rem;">
+          Todos os dados serão perdidos permanentemente.
+        </div>
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox" id="dropCascade">
+          <label class="form-check-label text-muted" for="dropCascade" style="font-size:.85rem;">
+            CASCADE (remove views e dependências)
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <form id="dropTableForm" method="POST">
+          <input type="hidden" name="cascade" id="dropCascadeInput" value="0">
+          <button type="submit" class="btn btn-danger btn-sm">
+            <i class="bi bi-trash me-1"></i>Deletar
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const dropTableModal = new bootstrap.Modal(document.getElementById('dropTableModal'));
+  document.querySelectorAll('.drop-table-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const table = btn.dataset.table;
+      document.getElementById('dropTableName').textContent = table;
+      document.getElementById('dropTableForm').action = `/db/{{ instance_name }}/drop-table/${table}`;
+      document.getElementById('dropCascade').checked = false;
+      document.getElementById('dropCascadeInput').value = '0';
+      dropTableModal.show();
+    });
+  });
+  document.getElementById('dropCascade').addEventListener('change', function() {
+    document.getElementById('dropCascadeInput').value = this.checked ? '1' : '0';
+  });
+</script>
+{% endblock %}

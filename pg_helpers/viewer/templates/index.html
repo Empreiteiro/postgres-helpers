@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}PG Helpers — Instâncias{% endblock %}
+
+{% block content %}
+<div class="topbar d-flex align-items-center justify-content-between">
+  <h2><i class="bi bi-grid-3x3-gap me-2 text-primary"></i>Instâncias PostgreSQL</h2>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModal">
+    <i class="bi bi-plus-lg me-1"></i>New instance
+  </button>
+</div>
+
+{% if not instances %}
+<div class="alert alert-info d-flex align-items-center gap-2" style="border-radius:12px;">
+  <i class="bi bi-info-circle fs-5"></i>
+  <div>
+    Nenhuma instância encontrada.<br>
+    <small>Use <code>python main.py create &lt;nome&gt; --seed ecommerce</code> para criar uma.</small>
+  </div>
+</div>
+{% else %}
+<div class="row g-3">
+  {% for name, inst in instances.items() %}
+  {% set s = stats.get(name, {}) %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <h5 class="card-title mb-0">
+            <i class="bi bi-server me-2 text-primary"></i>{{ name }}
+          </h5>
+          <span>
+            {% if s.ok %}
+            <span class="status-dot dot-ok" title="Conectado"></span>
+            {% else %}
+            <span class="status-dot dot-err" title="Erro de conexão"></span>
+            {% endif %}
+          </span>
+        </div>
+
+        <div class="mb-3">
+          {% if inst.scenario %}
+          <span class="badge bg-primary me-1">{{ inst.scenario }}</span>
+          {% endif %}
+          <span class="badge bg-secondary">porta {{ inst.port }}</span>
+        </div>
+
+        <div class="row text-center mb-3">
+          <div class="col">
+            <div class="fw-bold fs-4 text-primary">{{ s.tables }}</div>
+            <small class="text-muted">tabelas</small>
+          </div>
+          <div class="col border-start">
+            <div class="fw-bold fs-4 text-success">{{ "{:,}".format(s.rows) if s.ok else "?" }}</div>
+            <small class="text-muted">linhas totais</small>
+          </div>
+        </div>
+
+        <small class="text-muted d-block mb-2">
+          <i class="bi bi-clock me-1"></i>{{ inst.created_at[:19] if inst.created_at else "—" }}
+        </small>
+
+        {% set conn = "postgresql://" + inst.user + ":" + inst.password + "@" + inst.host + ":" + inst.port|string + "/" + inst.dbname %}
+        <div class="conn-box d-flex align-items-center gap-1 mb-3 p-2 rounded" style="background:#f1f5f9; border: 1px solid #e2e8f0;">
+          <code class="flex-grow-1 text-truncate" style="font-size:.72rem; color:#7c3aed;" title="{{ conn }}">{{ conn }}</code>
+          <button
+            class="btn btn-sm copy-btn flex-shrink-0"
+            style="padding: 2px 7px;"
+            data-conn="{{ conn }}"
+            title="Copiar string de conexão"
+          >
+            <i class="bi bi-clipboard"></i>
+          </button>
+        </div>
+
+        <div class="d-flex gap-2">
+          {% if s.ok %}
+          <a href="/db/{{ name }}" class="btn btn-primary btn-sm flex-grow-1">
+            <i class="bi bi-eye me-1"></i>Ver tabelas
+          </a>
+          {% else %}
+          <button class="btn btn-outline-secondary btn-sm flex-grow-1" disabled>
+            <i class="bi bi-exclamation-triangle me-1"></i>Sem conexão
+          </button>
+          {% endif %}
+          <button
+            class="btn btn-outline-danger btn-sm delete-btn"
+            data-name="{{ name }}"
+            title="Deletar instância"
+          >
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Quick reference -->
+<div class="card mt-4">
+  <div class="card-body">
+    <h6 class="text-muted mb-3"><i class="bi bi-terminal me-2"></i>Comandos rápidos</h6>
+    <div class="row g-2" style="font-size:.8rem;">
+      <div class="col-md-6">
+        <code>python main.py create meu-banco --seed ecommerce</code>
+        <div class="text-muted">Criar instância com dados</div>
+      </div>
+      <div class="col-md-6">
+        <code>python main.py create-many 3 --seed blog</code>
+        <div class="text-muted">Criar 3 instâncias sequenciais</div>
+      </div>
+      <div class="col-md-6">
+        <code>python main.py seed meu-banco</code>
+        <div class="text-muted">Adicionar dados incrementais</div>
+      </div>
+      <div class="col-md-6">
+        <code>python main.py list</code>
+        <div class="text-muted">Listar instâncias no terminal</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create instance modal -->
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title"><i class="bi bi-plus-circle me-2 text-primary"></i>New instance</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="/create" method="POST" id="createForm">
+        <div class="modal-body">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Name</label>
+            <input type="text" name="name" class="form-control" placeholder="Auto-generated if empty">
+            <div class="form-text">Letters, numbers and hyphens. Leave blank for a random name.</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Seed scenario</label>
+            <select name="seed" class="form-select">
+              <option value="">— None (blank database) —</option>
+              <option value="ecommerce">E-commerce  (customers, products, orders, order_items)</option>
+              <option value="blog">Blog  (users, posts, comments, tags)</option>
+              <option value="hr">HR  (departments, employees, projects)</option>
+            </select>
+          </div>
+
+          <div class="row g-3 mb-3" id="seedOptions" style="display:none !important;">
+            <div class="col">
+              <label class="form-label fw-semibold">Rows</label>
+              <input type="number" name="rows" class="form-control" placeholder="Default" min="1" max="100000">
+              <div class="form-text">Leave blank for default amount.</div>
+            </div>
+          </div>
+
+          <hr class="my-3">
+
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Port</label>
+              <input type="number" name="port" class="form-control" placeholder="Auto-assigned" min="1024" max="65535">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Password</label>
+              <input type="text" name="password" class="form-control" value="postgres">
+            </div>
+          </div>
+
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm" id="createSubmitBtn">
+            <i class="bi bi-plus-lg me-1"></i>Create
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirmation modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-danger"><i class="bi bi-trash me-2"></i>Delete instance</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        Delete <strong id="deleteInstanceName"></strong>?
+        <div class="text-muted mt-1" style="font-size:.85rem;">
+          This will stop and remove the Docker container. All data will be lost.
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <form id="deleteForm" method="POST">
+          <button type="submit" class="btn btn-danger btn-sm">
+            <i class="bi bi-trash me-1"></i>Delete
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Show rows field only when a seed is selected
+  const seedSelect = document.querySelector('select[name="seed"]');
+  const seedOptions = document.getElementById('seedOptions');
+  seedSelect.addEventListener('change', () => {
+    seedOptions.style.display = seedSelect.value ? '' : 'none !important';
+    seedOptions.style.setProperty('display', seedSelect.value ? 'flex' : 'none', 'important');
+  });
+
+  // Loading state on create form submit
+  document.getElementById('createForm').addEventListener('submit', () => {
+    const btn = document.getElementById('createSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creating…';
+  });
+
+  // Copy button
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(btn.dataset.conn).then(() => {
+        const icon = btn.querySelector('i');
+        icon.className = 'bi bi-clipboard-check';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          icon.className = 'bi bi-clipboard';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    });
+  });
+
+  // Delete button
+  const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.name;
+      document.getElementById('deleteInstanceName').textContent = name;
+      document.getElementById('deleteForm').action = `/db/${name}/delete`;
+      deleteModal.show();
+    });
+  });
+</script>
+{% endblock %}
+
