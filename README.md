@@ -1,13 +1,34 @@
 # postgres-helpers
 
-Python CLI to create and manage PostgreSQL instances via Docker, with sample data seeding and a web viewer.
+Python CLI to create and manage PostgreSQL instances via Docker or Podman, with sample data seeding and a web viewer.
 
 ## Requirements
 
 - Python 3.11+
-- Docker Desktop running
+- **Docker** Desktop running **or** **Podman** (`podman machine start`)
 
-## Installation
+## Quick Start (Makefile)
+
+```bash
+make check-deps     # verifica Python e Docker/Podman
+make setup          # cria virtualenv e instala dependências
+source .venv/bin/activate
+make create ARGS="--seed ecommerce"
+```
+
+O Makefile detecta automaticamente se você tem Docker ou Podman instalado. Para forçar um runtime específico:
+
+```bash
+make CONTAINER_RT=podman create ARGS="my-db"
+```
+
+Veja todos os comandos disponíveis:
+
+```bash
+make help
+```
+
+## Installation (manual)
 
 ```bash
 pip install -r requirements.txt
@@ -112,6 +133,7 @@ Data is generated with [Faker](https://faker.readthedocs.io/) using the `pt_BR` 
 ```
 postgres-helpers/
 ├── main.py                    # CLI entry point (Typer)
+├── Makefile                   # Build/run automation (macOS/Linux)
 ├── requirements.txt
 └── pg_helpers/
     ├── instances.py           # State persisted in instances.json
@@ -126,10 +148,30 @@ postgres-helpers/
         └── templates/
 ```
 
+## Makefile targets
+
+| Target | Description |
+|---|---|
+| `make help` | Mostra todos os comandos |
+| `make check-runtime` | Verifica se Docker ou Podman está disponível e em execução |
+| `make check-deps` | Verifica Python e runtime de containers |
+| `make setup` | Cria virtualenv e instala dependências |
+| `make install` | Instala dependências no ambiente atual |
+| `make create` | Cria instância (ex: `make create ARGS="--seed blog"`) |
+| `make create-many` | Cria múltiplas instâncias |
+| `make list` | Lista instâncias |
+| `make view` | Inicia o visualizador web |
+| `make seed` | Adiciona dados incrementais |
+| `make remove` | Remove uma instância |
+| `make remove-all` | Remove todas as instâncias |
+| `make info` | Mostra informações do ambiente |
+| `make clean` | Remove virtualenv e caches |
+
 ## Technical details
 
 - Docker image: `postgres:16-alpine`
 - Containers named `pghelper_<name>`
+- Container runtime: Docker or Podman (auto-detected)
 - Default credentials: user `postgres`, password `postgres`
 - Default port: `5432`, auto-incremented if occupied by any process (checked via TCP socket)
 - Instance state saved in `instances.json` at the project root
