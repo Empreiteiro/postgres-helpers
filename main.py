@@ -230,11 +230,14 @@ def view(
     debug: bool = typer.Option(False, help="Modo debug do Flask"),
 ):
     """Inicia o visualizador web dos bancos de dados."""
-    from pg_helpers.viewer.app import run
+    from pg_helpers.viewer.app import run, find_free_port
 
-    console.print(f"[bold green]Visualizador em http://{host}:{port}[/bold green]")
+    actual_port = find_free_port(port)
+    if actual_port != port:
+        console.print(f"[yellow]Porta {port} em uso. Usando porta {actual_port}.[/yellow]")
+    console.print(f"[bold green]Visualizador em http://{host}:{actual_port}[/bold green]")
     console.print("Pressione [cyan]Ctrl+C[/cyan] para parar.\n")
-    run(host=host, port=port, debug=debug)
+    run(host=host, port=actual_port, debug=debug)
 
 
 @app.command()

@@ -270,5 +270,18 @@ def delete_instance(instance_name):
     return redirect(url_for("index"))
 
 
+def find_free_port(base: int = 8080, max_tries: int = 100) -> int:
+    """Retorna *base* se estiver livre, senão a próxima porta disponível."""
+    import socket
+
+    for offset in range(max_tries):
+        candidate = base + offset
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            if s.connect_ex(("localhost", candidate)) != 0:
+                return candidate
+    raise RuntimeError(f"Nenhuma porta livre encontrada a partir de {base}.")
+
+
 def run(host: str = "127.0.0.1", port: int = 8080, debug: bool = False):
     app.run(host=host, port=port, debug=debug)
