@@ -1,10 +1,50 @@
 """Gerenciamento de containers Docker/Podman para PostgreSQL."""
 
 import os
+import shutil
+import subprocess
 import sys
 import time
 import docker
 import docker.errors
+
+
+def _podman_socket_from_cli() -> str | None:
+    """
+    Consulta o Podman para descobrir o socket atual.
+    Funciona com Podman 5+ (applehv, libkrun, qemu) e versões anteriores,
+    pois o caminho exato varia por backend e por versão.
+    Retorna a URL no formato 'unix://...' ou None se não conseguir descobrir.
+    """
+    if not shutil.which("podman"):
+        return None
+
+    # Podman 4+/5+: 'podman machine inspect' expõe o socket da máquina ativa
+    try:
+        out = subprocess.run(
+            ["podman", "machine", "inspect", "--format",
+             "{{.ConnectionInfo.PodmanSocket.Path}}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        path = out.stdout.strip().splitlines()[0] if out.stdout else ""
+        if path and os.path.exists(path):
+            return f"unix://{path}"
+    except (subprocess.SubprocessError, OSError, IndexError):
+        pass
+
+    # Linux/rootless e fallback: 'podman info' expõe o RemoteSocket
+    try:
+        out = subprocess.run(
+            ["podman", "info", "--format", "{{.Host.RemoteSocket.Path}}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        path = out.stdout.strip()
+        if path:
+            return path if path.startswith("unix://") else f"unix://{path}"
+    except (subprocess.SubprocessError, OSError):
+        pass
+
+    return None
 
 
 def _candidate_sockets() -> list[str]:
@@ -17,11 +57,16 @@ def _candidate_sockets() -> list[str]:
     if sys.platform == "darwin":
         home = os.path.expanduser("~")
         xdg = os.environ.get("XDG_RUNTIME_DIR", "")
-        return [
+        tmpdir = os.environ.get("TMPDIR", "")
+        candidates = [
+            # Podman 5+ com applehv/libkrun (macOS)
+            *([f"unix://{tmpdir.rstrip('/')}/podman/podman-machine-default-api.sock"] if tmpdir else []),
+            # Podman QEMU clássico
             f"unix://{home}/.local/share/containers/podman/machine/podman-machine-default/podman.sock",
             f"unix://{home}/.local/share/containers/podman/machine/qemu/podman.sock",
-            *([ f"unix://{xdg}/podman/podman.sock"] if xdg else []),
+            *([f"unix://{xdg}/podman/podman.sock"] if xdg else []),
         ]
+        return candidates
     # Linux
     uid = os.getuid()
     xdg = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{uid}")
@@ -36,31 +81,49 @@ def _client() -> docker.DockerClient:
     """
     Conecta ao runtime de containers disponível.
     Tenta, em ordem:
-      1. docker.from_env()  — Docker padrão ou DOCKER_HOST customizado
-      2. Caminhos de socket conhecidos do Podman
+      1. docker.from_env()       — Docker padrão ou DOCKER_HOST customizado
+      2. Socket do Podman descoberto via 'podman machine inspect'/'podman info'
+      3. Caminhos de socket conhecidos do Podman (fallback estático)
     """
+    tried: list[str] = []
+
     # 1. Variáveis de ambiente / Docker padrão
     try:
         client = docker.from_env()
         client.ping()
         return client
     except Exception:
-        pass
+        tried.append("docker.from_env() / DOCKER_HOST")
 
-    # 2. Sockets do Podman
+    # 2. Socket do Podman descoberto dinamicamente
+    discovered = _podman_socket_from_cli()
+    if discovered:
+        try:
+            client = docker.DockerClient(base_url=discovered)
+            client.ping()
+            return client
+        except Exception:
+            tried.append(discovered)
+
+    # 3. Sockets do Podman conhecidos (fallback)
     for url in _candidate_sockets():
+        if url == discovered:
+            continue
         try:
             client = docker.DockerClient(base_url=url)
             client.ping()
             return client
         except Exception:
+            tried.append(url)
             continue
 
+    tried_lines = "\n    ".join(tried) if tried else "(nenhum)"
     raise RuntimeError(
         "Não foi possível conectar ao Docker nem ao Podman.\n"
         "  • Docker: verifique se o Docker Desktop está em execução.\n"
         "  • Podman: execute 'podman machine start' ou defina DOCKER_HOST "
-        "apontando para o socket do Podman."
+        "apontando para o socket do Podman.\n"
+        f"  Caminhos tentados:\n    {tried_lines}"
     )
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PG Helpers — CLI para criar e gerenciar instâncias PostgreSQL via Docker."""
+"""PG Helpers — CLI para criar e gerenciar instâncias PostgreSQL via Docker ou Podman."""
 
 import typer
 from rich.console import Console
@@ -8,7 +8,7 @@ from rich import box
 from typing import Optional
 
 app = typer.Typer(
-    help="PG Helpers — Crie e gerencie instâncias PostgreSQL via Docker.",
+    help="PG Helpers — Crie e gerencie instâncias PostgreSQL via Docker ou Podman.",
     no_args_is_help=True,
 )
 console = Console()
@@ -26,7 +26,7 @@ def create(
     password: str = typer.Option("postgres", "--password", help="Senha do PostgreSQL"),
     rows: int = typer.Option(0, "--rows", "-r", help="Quantidade de linhas (0 = padrão do cenário)"),
 ):
-    """Cria uma nova instância PostgreSQL via Docker."""
+    """Cria uma nova instância PostgreSQL via Docker ou Podman."""
     from pg_helpers import instances, docker
     from pg_helpers.seeds import seed as do_seed
     from pg_helpers.database import DatabaseManager
@@ -59,7 +59,7 @@ def create(
             docker.create_postgres(name, port, password)
     except Exception as e:
         console.print(f"[red]Erro ao criar container: {e}[/red]")
-        console.print("[yellow]Verifique se o Docker está em execução.[/yellow]")
+        console.print("[yellow]Verifique se o Docker ou o Podman está em execução.[/yellow]")
         raise typer.Exit(1)
 
     with console.status("[blue]Aguardando PostgreSQL iniciar..."):

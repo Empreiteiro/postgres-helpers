@@ -3,9 +3,23 @@
 # Detecta automaticamente Docker ou Podman.
 # ──────────────────────────────────────────────────────────────
 
-PYTHON   ?= python3
-PIP      ?= pip3
 VENV_DIR ?= .venv
+
+# ── Detecção automática do interpretador Python ──────────────
+# Se existir um virtualenv em $(VENV_DIR), usa-o automaticamente
+# (sem precisar de 'source .venv/bin/activate'). Caso contrário,
+# usa o python3/pip3 do sistema. Pode-se sobrescrever com:
+#   make PYTHON=/caminho/python ...
+ifneq ($(wildcard $(VENV_DIR)/bin/python),)
+  PYTHON := $(VENV_DIR)/bin/python
+  PIP    := $(VENV_DIR)/bin/pip
+else
+  PYTHON ?= python3
+  PIP    ?= pip3
+endif
+
+# Pacotes Python obrigatórios (módulos importáveis, não nomes de pip)
+PY_REQUIRED := typer docker psycopg2 flask faker rich
 
 # ── Detecção automática do runtime de containers ─────────────
 CONTAINER_RT :=
@@ -26,8 +40,8 @@ endif
 
 # ── Targets ──────────────────────────────────────────────────
 
-.PHONY: help check-runtime check-deps setup install run create list view \
-        remove remove-all seed create-many clean info
+.PHONY: help check-runtime check-deps check-pydeps setup install run create \
+        list view remove remove-all seed create-many clean info
 
 help: ## Mostra esta ajuda
 	@echo ""
@@ -74,6 +88,23 @@ check-deps: ## Verifica dependências do sistema (Python, pip, runtime)
 	@echo "Runtime: $(CONTAINER_RT)"
 	@echo "Tudo certo!"
 
+check-pydeps: ## Verifica se os pacotes Python (requirements.txt) estão instalados
+	@missing=$$($(PYTHON) -c "import importlib.util as u, sys; \
+mods = '$(PY_REQUIRED)'.split(); \
+miss = [m for m in mods if u.find_spec(m) is None]; \
+print(' '.join(miss))" 2>/dev/null); \
+	if [ -n "$$missing" ]; then \
+		echo "ERRO: pacotes Python ausentes: $$missing"; \
+		echo "  Interpretador em uso: $(PYTHON)"; \
+		if [ ! -d "$(VENV_DIR)" ]; then \
+			echo "  Solução recomendada: make setup   (cria $(VENV_DIR) e instala tudo)"; \
+		else \
+			echo "  Solução: make setup               (reinstala no $(VENV_DIR) existente)"; \
+		fi; \
+		echo "  Alternativa:         make install   (instala no Python atual)"; \
+		exit 1; \
+	fi
+
 setup: check-deps ## Cria virtualenv e instala dependências
 	@if [ ! -d "$(VENV_DIR)" ]; then \
 		echo "Criando virtualenv em $(VENV_DIR)..."; \
@@ -89,28 +120,28 @@ install: ## Instala dependências no ambiente atual (sem virtualenv)
 
 # ── Atalhos para a CLI ───────────────────────────────────────
 
-run: ## Executa a CLI (ex: make run ARGS="create --seed ecommerce")
+run: check-pydeps ## Executa a CLI (ex: make run ARGS="create --seed ecommerce")
 	$(PYTHON) main.py $(ARGS)
 
-create: check-runtime ## Cria uma instância PostgreSQL (ex: make create ARGS="my-db --seed blog")
+create: check-runtime check-pydeps ## Cria uma instância PostgreSQL (ex: make create ARGS="my-db --seed blog")
 	$(PYTHON) main.py create $(ARGS)
 
-create-many: check-runtime ## Cria múltiplas instâncias (ex: make create-many ARGS="3 --seed hr")
+create-many: check-runtime check-pydeps ## Cria múltiplas instâncias (ex: make create-many ARGS="3 --seed hr")
 	$(PYTHON) main.py create-many $(ARGS)
 
-list: ## Lista instâncias gerenciadas
+list: check-pydeps ## Lista instâncias gerenciadas
 	$(PYTHON) main.py list
 
-view: ## Inicia o visualizador web (ex: make view ARGS="--port 9000")
+view: check-pydeps ## Inicia o visualizador web (ex: make view ARGS="--port 9000")
 	$(PYTHON) main.py view $(ARGS)
 
-seed: ## Adiciona dados incrementais (ex: make seed ARGS="my-db --rows 50")
+seed: check-pydeps ## Adiciona dados incrementais (ex: make seed ARGS="my-db --rows 50")
 	$(PYTHON) main.py seed $(ARGS)
 
-remove: ## Remove uma instância (ex: make remove ARGS="my-db --force")
+remove: check-pydeps ## Remove uma instância (ex: make remove ARGS="my-db --force")
 	$(PYTHON) main.py remove $(ARGS)
 
-remove-all: ## Remove todas as instâncias (ex: make remove-all ARGS="--force")
+remove-all: check-pydeps ## Remove todas as instâncias (ex: make remove-all ARGS="--force")
 	$(PYTHON) main.py remove-all $(ARGS)
 
 # ── Utilidades ───────────────────────────────────────────────
@@ -119,7 +150,12 @@ info: check-runtime ## Mostra informações do ambiente
 	@echo ""
 	@echo "PG Helpers — Informações do ambiente"
 	@echo "────────────────────────────────────"
-	@echo "  Python:    $$($(PYTHON) --version)"
+	@echo "  Python:    $$($(PYTHON) --version)  ($(PYTHON))"
+	@if [ -d "$(VENV_DIR)" ]; then \
+		echo "  Venv:      $(VENV_DIR) (em uso)"; \
+	else \
+		echo "  Venv:      não encontrado"; \
+	fi
 	@echo "  Runtime:   $(CONTAINER_RT)"
 	@echo "  SO:        $$(uname -s) $$(uname -m)"
 	@if [ "$(CONTAINER_RT)" = "docker" ]; then \
